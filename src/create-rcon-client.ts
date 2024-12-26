@@ -1,4 +1,9 @@
-import { deserializeRconPacket, RconPacketType, serializeRconPacket } from './packet.js'
+import {
+  deserializeRconPacket,
+  RconPacketType,
+  serializeRconPacket,
+  type RconPacket,
+} from './packet.js'
 import { Promise$withResolvers } from './util-promise.js'
 import type { CreateConnectionOptions } from './with-transport-net.js'
 
@@ -35,7 +40,7 @@ export const createRconClient = async (
   const createTransport = await withTransport(options)
 
   let requestId = 0
-  const requests: Record<number, PromiseWithResolvers<string>> = {}
+  const requests: Record<number, PromiseWithResolvers<RconPacket>> = {}
 
   let buffer = new Uint8Array(0)
   const transport = createTransport({
@@ -54,7 +59,7 @@ export const createRconClient = async (
       }
 
       if (rconPacket) {
-        requests[rconPacket.id]?.resolve(rconPacket.body)
+        requests[rconPacket.id]?.resolve(rconPacket)
       }
     },
     onError: () => {},
@@ -69,16 +74,25 @@ export const createRconClient = async (
 
     const { promise } = (requests[rconPacket.id] = Promise$withResolvers())
 
+    if (type === RconPacketType.Auth) {
+      requests[-1] = requests[rconPacket.id]!
+    }
+
     await transport.write(serializeRconPacket(rconPacket))
 
     return promise
   }
 
-  await write(RconPacketType.Auth, options.pass)
+  const authResponse = await write(RconPacketType.Auth, options.pass)
+
+  if (authResponse.id === -1) {
+    throw new Error('Unable to establish an rcon connection, the password provided is invalid')
+  }
 
   return {
     exec: async (cmd: string) => {
-      return write(RconPacketType.ExecCommand, cmd)
+      const packet = await write(RconPacketType.ExecCommand, cmd)
+      return packet.body
     },
     close: () => {
       transport.close()
