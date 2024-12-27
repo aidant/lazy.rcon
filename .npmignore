@@ -1,5 +1,5 @@
 tsconfig.json
 pnpm-lock.yaml
-lib/**/*.test.*
+dist/**/*.test.*
 src/
 *.config.*

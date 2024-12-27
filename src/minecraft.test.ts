@@ -1,19 +1,22 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { createGameClient, type GameClient } from './create-game-client.js'
+import { commands } from './minecraft.js'
 import { createRconClient, type RconClient } from './mod.js'
 
-describe('rcon', () => {
-  describe('minecraft', () => {
-    describe('basic commands', () => {
-      let mc: RconClient
-      beforeAll(async () => {
-        mc = await createRconClient({ host: 'localhost', port: 25575, pass: 'password' })
-      })
-      afterAll(() => {
-        mc.close()
-      })
+describe('minecraft', () => {
+  let rcon: RconClient
+  let game: GameClient<typeof commands>
+  beforeAll(async () => {
+    rcon = await createRconClient({ host: 'localhost', port: 25575, pass: 'password' })
+    game = createGameClient(rcon, commands)
+  })
+  afterAll(() => {
+    rcon.close()
+  })
 
+  describe('rcon client', () => {
+    describe('basic commands', () => {
       it.each([
-        // 3392
         {
           input: 'help',
           output: [
@@ -115,7 +118,7 @@ describe('rcon', () => {
           output: 'The world border is currently 59999968 block(s) wide',
         },
       ])('$input', async ({ input, output }) => {
-        await expect(mc.exec(input!)).resolves.toEqual(output)
+        await expect(rcon.exec(input!)).resolves.toEqual(output)
       })
     })
 
@@ -125,6 +128,116 @@ describe('rcon', () => {
           createRconClient({ host: 'localhost', port: 25575, pass: 'no' }),
         ).rejects.toThrowError()
       })
+    })
+  })
+
+  describe('game client', () => {
+    it.each([
+      {
+        id: 'list',
+        params: {},
+        result: { count: 0, max: 20, players: [] },
+      },
+
+      {
+        id: 'whitelistOn',
+        params: {},
+        result: {
+          status: 'whitelist_on',
+        },
+      },
+      {
+        id: 'whitelistOn',
+        params: {},
+        result: {
+          status: 'whitelist_already_on',
+        },
+      },
+      {
+        id: 'whitelistOff',
+        params: {},
+        result: {
+          status: 'whitelist_off',
+        },
+      },
+      {
+        id: 'whitelistOff',
+        params: {},
+        result: {
+          status: 'whitelist_already_off',
+        },
+      },
+      {
+        id: 'whitelistAdd',
+        params: { player: crypto.randomUUID() },
+        result: {
+          status: 'player_not_found',
+        },
+      },
+      {
+        id: 'whitelistAdd',
+        params: { player: 'notch' },
+        result: {
+          status: 'player_added',
+        },
+      },
+      {
+        id: 'whitelistAdd',
+        params: { player: 'jeb_' },
+        result: {
+          status: 'player_added',
+        },
+      },
+      {
+        id: 'whitelistAdd',
+        params: { player: 'notch' },
+        result: {
+          status: 'player_already_added',
+        },
+      },
+      {
+        id: 'whitelist',
+        params: {},
+        result: {
+          count: 2,
+          players: ['jeb_', 'Notch'],
+        },
+      },
+      {
+        id: 'whitelistRemove',
+        params: { player: crypto.randomUUID() },
+        result: {
+          status: 'player_not_found',
+        },
+      },
+      {
+        id: 'whitelistRemove',
+        params: { player: 'jeb_' },
+        result: {
+          status: 'player_removed',
+        },
+      },
+      {
+        id: 'whitelistRemove',
+        params: { player: 'notch' },
+        result: {
+          status: 'player_removed',
+        },
+      },
+      {
+        id: 'whitelistRemove',
+        params: { player: 'notch' },
+        result: {
+          status: 'player_already_removed',
+        },
+      },
+      {
+        id: 'whitelistReload',
+        params: {},
+        result: undefined,
+      },
+    ])('$id', async ({ id, params, result }) => {
+      await expect(game[id as keyof typeof game](params as any)).resolves.toEqual(result)
     })
   })
 })

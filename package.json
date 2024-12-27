@@ -1,6 +1,6 @@
 {
   "name": "@lazy/rcon",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/aidant/lazy.id.git"
@@ -8,12 +8,16 @@
   "type": "module",
   "exports": {
     ".": {
-      "types": "./lib/mod.d.ts",
-      "default": "./lib/mod.js"
+      "types": "./dist/mod.d.ts",
+      "default": "./dist/mod.js"
     },
     "./byo-transport-net": {
-      "types": "./lib/byo-transport-net.d.ts",
-      "default": "./lib/byo-transport-net.js"
+      "types": "./dist/byo-transport-net.d.ts",
+      "default": "./dist/byo-transport-net.js"
+    },
+    "./minecraft": {
+      "types": "./dist/minecraft.d.ts",
+      "default": "./dist/minecraft.js"
     }
   },
   "publishConfig": {

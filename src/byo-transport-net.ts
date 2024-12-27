@@ -1,4 +1,10 @@
 import {
+  createGameClient,
+  type Command,
+  type Commands,
+  type GameClient,
+} from './create-game-client.js'
+import {
   createRconClient as _createRconClient,
   type CreateRconClientOptions,
   type RconClient,
@@ -12,4 +18,11 @@ export const createRconClient = (
   return _createRconClient(options, withTransportNet(createConnection))
 }
 
-export type { CreateConnectionFn, CreateRconClientOptions, RconClient }
+export {
+  createGameClient,
+  type Command,
+  type Commands,
+  type CreateRconClientOptions,
+  type GameClient,
+  type RconClient,
+}
