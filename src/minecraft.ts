@@ -1,6 +1,6 @@
-import type { Commands } from './create-game-client.js'
+import type { Commands } from './commands.js'
 
-export const commands = {
+export const minecraft = {
   list: {
     request: {
       body: 'list',

@@ -1,17 +1,21 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { createGameClient, type GameClient } from './create-game-client.js'
-import { commands } from './minecraft.js'
-import { createRconClient, type RconClient } from './mod.js'
+import { createConnection } from 'node:net'
+import { afterAll, describe, expect, it } from 'vitest'
+import { minecraft } from './minecraft.js'
+import { createRconClient } from './mod.js'
 
 describe('minecraft', () => {
-  let rcon: RconClient
-  let game: GameClient<typeof commands>
-  beforeAll(async () => {
-    rcon = await createRconClient({ host: 'localhost', port: 25575, pass: 'password' })
-    game = createGameClient(rcon, commands)
-  })
+  const rcon = createRconClient(
+    createConnection,
+    {
+      host: 'localhost',
+      port: 25575,
+      password: 'password',
+    },
+    minecraft,
+  )
+
   afterAll(() => {
-    rcon.close()
+    rcon.$disconnect()
   })
 
   describe('rcon client', () => {
@@ -118,15 +122,35 @@ describe('minecraft', () => {
           output: 'The world border is currently 59999968 block(s) wide',
         },
       ])('$input', async ({ input, output }) => {
-        await expect(rcon.exec(input!)).resolves.toEqual(output)
+        await expect(rcon.$exec(input!)).resolves.toEqual(output)
       })
     })
 
-    describe('invalid credentials', () => {
+    describe('connection behaviour', () => {
+      const rcon = createRconClient(
+        createConnection,
+        {
+          host: 'localhost',
+          port: 25575,
+          password: 'no',
+        },
+        minecraft,
+      )
+
       it('throws on invalid credentials', async () => {
-        await expect(
-          createRconClient({ host: 'localhost', port: 25575, pass: 'no' }),
-        ).rejects.toThrowError()
+        await expect(rcon.list()).rejects.toThrowError('Invalid password')
+      })
+
+      it('works with valid credentials', async () => {
+        rcon.$configure({ password: 'password' })
+        await expect(rcon.list()).resolves.toEqual({ count: 0, max: 20, players: [] })
+      })
+
+      it('requires a disconnect before config changes are applied', async () => {
+        rcon.$configure({ password: 'no' })
+        await expect(rcon.list()).resolves.toEqual({ count: 0, max: 20, players: [] })
+        rcon.$disconnect()
+        await expect(rcon.list()).rejects.toThrowError('Invalid password')
       })
     })
   })
@@ -237,7 +261,7 @@ describe('minecraft', () => {
         result: undefined,
       },
     ])('$id', async ({ id, params, result }) => {
-      await expect(game[id as keyof typeof game](params as any)).resolves.toEqual(result)
+      await expect(rcon[id as keyof typeof rcon](params as any)).resolves.toEqual(result)
     })
   })
 })

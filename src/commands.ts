@@ -1,5 +1,3 @@
-import type { RconClient } from './create-rcon-client.js'
-
 export type ConstDefinition = { const: unknown }
 export type StringDefinition = { type: 'string' }
 export type NumberDefinition = { type: 'number' }
@@ -46,12 +44,14 @@ export type InferCommandResponse<TCommand extends Command> = {
           ? InferTypeFromDefinition<Params[ParamName]>
           : never
       }
-    : never
+    : void
 }[number]
 
 export type GameClient<TCommands extends Commands> = Simplify<{
   [CommandId in keyof TCommands]: (
-    options: InferCommandRequest<TCommands[CommandId]>,
+    ...args: TCommands[CommandId]['request']['params'] extends {}
+      ? [options: InferCommandRequest<TCommands[CommandId]>]
+      : [options?: InferCommandRequest<TCommands[CommandId]>]
   ) => Promise<InferCommandResponse<TCommands[CommandId]>>
 }>
 
@@ -95,7 +95,7 @@ export const createResponse = (command: Command, response: string) => {
                 /\{.+?\}/g,
                 (match) => `(?<${match.substring(1, match.length - 1)}>.*?)`,
               )
-            : value.replace(/[\.\*\+\?\^\$\{\}\(\)\|\[\]\\]/g, '\\$&'),
+            : value.replace(/[\?\.\(\)\[\]\{\}\*\\\^\+\|\$]/g, '\\$&'),
         )
         .join('')}$`,
     )
@@ -120,18 +120,4 @@ export const createResponse = (command: Command, response: string) => {
   }
 
   return
-}
-
-export const createGameClient = <TCommands extends Commands>(
-  rcon: RconClient,
-  commands: TCommands,
-): GameClient<TCommands> => {
-  return Object.fromEntries(
-    Object.entries(commands).map(([property, command]) => [
-      property,
-      async (options: Record<PropertyKey, unknown>) => {
-        return createResponse(command, await rcon.exec(createRequest(command, options)))
-      },
-    ]),
-  ) as unknown as GameClient<TCommands>
 }

@@ -1,26 +1,27 @@
-import { createConnection } from 'node:net'
+import { type Command, type Commands, type GameClient } from './commands.js'
 import {
-  type Command,
-  type Commands,
-  createGameClient,
-  type GameClient,
-} from './create-game-client.js'
-import {
-  createRconClient as _createRconClient,
-  type CreateRconClientOptions,
+  createRconClient,
+  type CreateRconConnection,
   type RconClient,
+  type RconClientOptions,
+  type RconConnection,
+  type RconConnectionOptions,
+  RconError,
+  type RconErrorCode,
 } from './create-rcon-client.js'
-import { withTransportNet } from './with-transport-net.js'
-
-export const createRconClient = (options: CreateRconClientOptions) => {
-  return _createRconClient(options, withTransportNet(createConnection))
-}
+import { minecraft } from './minecraft.js'
 
 export {
-  createGameClient,
+  createRconClient,
+  minecraft,
+  RconError,
   type Command,
   type Commands,
-  type CreateRconClientOptions,
+  type CreateRconConnection,
   type GameClient,
   type RconClient,
+  type RconClientOptions,
+  type RconConnection,
+  type RconConnectionOptions,
+  type RconErrorCode,
 }

@@ -1,8 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { deserializeRconPacket, RconPacketType, serializeRconPacket } from './packet.js'
-
-const hex = (hex: string): Uint8Array<ArrayBuffer> => new Uint8Array(Buffer.from(hex, 'hex'))
-const add = (a: Uint8Array, b: Uint8Array) => new Uint8Array([...a, ...b])
+import { add, hex } from './util-buffer.js'
 
 describe('packet', () => {
   /** @see https://developer.valvesoftware.com/wiki/Source_RCON_Protocol#Example_Packets */

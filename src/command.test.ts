@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createRequest, createResponse, type Command } from './create-game-client.js'
+import { createRequest, createResponse, type Command } from './commands.js'
 
 describe('game client', () => {
   describe('handles strings', () => {
