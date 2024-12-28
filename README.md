@@ -34,7 +34,7 @@ const rcon = createRconClient(
   {
     host: 'localhost',
     port: 25575,
-    pass: 'password',
+    password: 'password',
   },
   minecraft,
 )
@@ -55,7 +55,7 @@ const rcon = createRconClient(
   {
     host: 'localhost',
     port: 25575,
-    pass: 'password',
+    password: 'password',
   },
   {
     whitelistAdd: {
@@ -111,6 +111,6 @@ import TcpSocket from 'react-native-tcp-socket'
 const rcon = createRconClient(TcpSocket.createConnection, {
   host: 'localhost',
   port: 25575,
-  pass: 'password',
+  password: 'password',
 })
 ```
