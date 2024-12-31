@@ -57,6 +57,8 @@ export type RconClientOptions = {
 }
 
 export type RconClient = {
+  $isConnected: () => boolean
+  $observeIsConnected: (observer: (isConnected: boolean) => void) => () => void
   $configure: (options?: RconClientOptions) => void
   $connect: (options?: RconClientOptions) => Promise<void>
   $disconnect: () => void
@@ -94,6 +96,7 @@ export const createRconClient = <TCommands extends Commands>(
   let password = options?.password
 
   let connection: RconConnection | undefined
+  let connectionObservers: Set<(isConnected: boolean) => void> = new Set()
 
   let buffer = new Uint8Array(0)
   let requestId = 0
@@ -181,6 +184,10 @@ export const createRconClient = <TCommands extends Commands>(
       throw RconError.InvalidPassword()
     }
 
+    for (const observer of connectionObservers) {
+      observer(true)
+    }
+
     return connection
   }
   const $disconnect = (): void => {
@@ -203,6 +210,10 @@ export const createRconClient = <TCommands extends Commands>(
     requestId = 0
     requests = {}
     connection = undefined
+
+    for (const observer of connectionObservers) {
+      observer(false)
+    }
   }
   const $exec = async (
     connection: RconConnection,
@@ -245,6 +256,15 @@ export const createRconClient = <TCommands extends Commands>(
   }
 
   const rcon = {
+    $isConnected: () => !!connection,
+    $observeIsConnected: (observer) => {
+      connectionObservers.add(observer)
+      observer(!!connection)
+
+      return () => {
+        connectionObservers.delete(observer)
+      }
+    },
     $configure,
     $connect: async (options) => {
       $disconnect()
