@@ -56,9 +56,15 @@ export type RconClientOptions = {
   password?: string
 }
 
+export type RconStats = {
+  isConnected: boolean
+  lastResponseLatencyInMs: number | undefined
+  lastResponseTimestampInMs: number | undefined
+}
+
 export type RconClient = {
-  $isConnected: () => boolean
-  $observeIsConnected: (observer: (isConnected: boolean) => void) => () => void
+  $stats: () => RconStats
+  $observeStats: (observer: (stats: RconStats) => void) => () => void
   $configure: (options?: RconClientOptions) => void
   $connect: (options?: RconClientOptions) => Promise<void>
   $disconnect: () => void
@@ -96,13 +102,29 @@ export const createRconClient = <TCommands extends Commands>(
   let password = options?.password
 
   let connection: RconConnection | undefined
-  let connectionObservers: Set<(isConnected: boolean) => void> = new Set()
+  let connectionObservers: Set<(stats: RconStats) => void> = new Set()
 
   let buffer = new Uint8Array(0)
   let requestId = 0
-  let requests: Record<number, PromiseWithResolvers<RconPacket>> = {}
+  let requests: Record<
+    number,
+    {
+      requestTimestamp: Date
+      responseTimestamp: Date | undefined
+      resolvers: PromiseWithResolvers<RconPacket>
+    }
+  > = {}
+  let lastResponse:
+    | {
+        id: number
+        requestTimestamp: Date
+        responseTimestamp: Date
+      }
+    | undefined
 
   const handleData = (data: Uint8Array) => {
+    const now = new Date()
+
     buffer = add(buffer, data)
 
     while (buffer.length) {
@@ -115,12 +137,21 @@ export const createRconClient = <TCommands extends Commands>(
       }
 
       if (packet) {
-        requests[packet.id]?.resolve(packet)
+        const metadata = requests[packet.id]
+        if (metadata) {
+          metadata.responseTimestamp = now
+          metadata.resolvers.resolve(packet)
+        }
       }
     }
   }
   const handleError = (error?: unknown) => {
-    for (const [_, { reject }] of Object.entries(requests)) {
+    for (const [
+      _,
+      {
+        resolvers: { reject },
+      },
+    ] of Object.entries(requests)) {
       reject(RconError.TcpConnection({ cause: error }))
     }
 
@@ -129,7 +160,12 @@ export const createRconClient = <TCommands extends Commands>(
     $disconnect()
   }
   const handleClose = () => {
-    for (const [_, { reject }] of Object.entries(requests)) {
+    for (const [
+      _,
+      {
+        resolvers: { reject },
+      },
+    ] of Object.entries(requests)) {
       reject(RconError.TcpConnectionClosed())
     }
 
@@ -138,6 +174,14 @@ export const createRconClient = <TCommands extends Commands>(
     $disconnect()
   }
 
+  const $stats = (connection: RconConnection | undefined) => ({
+    isConnected: !!connection,
+    lastResponseLatencyInMs:
+      lastResponse?.responseTimestamp === undefined
+        ? undefined
+        : lastResponse.responseTimestamp!.getTime() - lastResponse.requestTimestamp!.getTime(),
+    lastResponseTimestampInMs: lastResponse?.responseTimestamp?.getTime(),
+  })
   const $configure = (options?: RconClientOptions) => {
     if (options?.host) host = options.host
     if (options?.port) port = options.port
@@ -185,7 +229,7 @@ export const createRconClient = <TCommands extends Commands>(
     }
 
     for (const observer of connectionObservers) {
-      observer(true)
+      observer($stats(connection))
     }
 
     return connection
@@ -203,16 +247,22 @@ export const createRconClient = <TCommands extends Commands>(
       connection.end()
     } catch {}
 
-    for (const [_, { reject }] of Object.entries(requests)) {
+    for (const [
+      _,
+      {
+        resolvers: { reject },
+      },
+    ] of Object.entries(requests)) {
       reject(RconError.TcpConnectionClosed())
     }
 
     requestId = 0
     requests = {}
+    lastResponse = undefined
     connection = undefined
 
     for (const observer of connectionObservers) {
-      observer(false)
+      observer($stats(connection))
     }
   }
   const $exec = async (
@@ -226,10 +276,14 @@ export const createRconClient = <TCommands extends Commands>(
       body,
     }
 
-    const resolvers = (requests[packet.id] = Promise$withResolvers())
+    const metadata = (requests[packet.id] = {
+      requestTimestamp: new Date(),
+      responseTimestamp: undefined,
+      resolvers: Promise$withResolvers(),
+    })
 
     if (type === RconPacketType.Auth) {
-      requests[-1] = resolvers
+      requests[-1] = metadata
     }
 
     const payload = serializeRconPacket(packet)
@@ -245,8 +299,24 @@ export const createRconClient = <TCommands extends Commands>(
     })
 
     try {
-      return await resolvers.promise
+      return await metadata.resolvers.promise
     } finally {
+      if (!lastResponse || packet.id > lastResponse.id) {
+        const metadata = requests[packet.id]
+
+        if (metadata?.responseTimestamp) {
+          lastResponse = {
+            id: packet.id,
+            requestTimestamp: metadata.requestTimestamp,
+            responseTimestamp: metadata.responseTimestamp,
+          }
+
+          for (const observer of connectionObservers) {
+            observer($stats(connection))
+          }
+        }
+      }
+
       delete requests[packet.id]
 
       if (type === RconPacketType.Auth) {
@@ -256,10 +326,12 @@ export const createRconClient = <TCommands extends Commands>(
   }
 
   const rcon = {
-    $isConnected: () => !!connection,
-    $observeIsConnected: (observer) => {
+    $stats: () => {
+      return $stats(connection)
+    },
+    $observeStats: (observer) => {
       connectionObservers.add(observer)
-      observer(!!connection)
+      observer($stats(connection))
 
       return () => {
         connectionObservers.delete(observer)
