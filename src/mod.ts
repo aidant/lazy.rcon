@@ -8,6 +8,7 @@ import {
   type RconConnectionOptions,
   RconError,
   type RconErrorCode,
+  type RconStats,
 } from './create-rcon-client.js'
 import { minecraft } from './minecraft.js'
 
@@ -24,4 +25,5 @@ export {
   type RconConnection,
   type RconConnectionOptions,
   type RconErrorCode,
+  type RconStats,
 }

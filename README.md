@@ -108,7 +108,7 @@ rcon.$disconnect()
 import { createRconClient } from '@lazy/rcon'
 import TcpSocket from 'react-native-tcp-socket'
 
-const rcon = createRconClient(TcpSocket.createConnection, {
+const rcon = createRconClient((options) => TcpSocket.createConnection(options, () => {}), {
   host: 'localhost',
   port: 25575,
   password: 'password',
