@@ -5,6 +5,7 @@ import {
   serializeRconPacket,
   type RconPacket,
 } from './packet.js'
+import { AbortSignal$timeout } from './util-abort-signal.js'
 import { add } from './util-buffer.js'
 import { Promise$withResolvers } from './util-promise.js'
 
@@ -15,6 +16,7 @@ export type RconErrorCode =
   | 'ERR_TCP_CONNECTION_OPEN'
   | 'ERR_TCP_CONNECTION'
   | 'ERR_TCP_WRITE'
+  | 'ERR_TIMEOUT'
 
 export class RconError<TCode extends RconErrorCode = RconErrorCode> extends Error {
   static InvalidOptions(options?: ErrorOptions) {
@@ -45,6 +47,10 @@ export class RconError<TCode extends RconErrorCode = RconErrorCode> extends Erro
     return new this('ERR_INVALID_PASSWORD', 'Invalid password', options)
   }
 
+  static Timeout(options?: ErrorOptions) {
+    return new this('ERR_TIMEOUT', 'The operation timed out', options)
+  }
+
   private constructor(public readonly code: TCode, message: string, options?: ErrorOptions) {
     super(message, options)
   }
@@ -54,6 +60,7 @@ export type RconClientOptions = {
   host?: string
   port?: number
   password?: string
+  timeout?: number
 }
 
 export type RconStats = {
@@ -100,6 +107,7 @@ export const createRconClient = <TCommands extends Commands>(
   let host = options?.host
   let port = options?.port
   let password = options?.password
+  let timeout = options?.timeout ?? 2500
 
   let connection: RconConnection | undefined
   let connectionObservers: Set<(stats: RconStats) => void> = new Set()
@@ -186,30 +194,55 @@ export const createRconClient = <TCommands extends Commands>(
     if (options?.host) host = options.host
     if (options?.port) port = options.port
     if (options?.password) password = options.password
+    if (options?.timeout) timeout = options.timeout
   }
   const $connect = async (options?: RconClientOptions): Promise<RconConnection> => {
     $configure(options)
 
-    if (!host || !port || !password) {
+    if (!host || !port) {
       throw RconError.InvalidOptions()
     }
+
+    if (!password) {
+      throw RconError.InvalidPassword()
+    }
+
+    let timeoutSignal = timeout === 0 ? undefined : AbortSignal$timeout(timeout)
 
     const connection = createRconConnection({ host, port })
 
     await new Promise<void>((resolve, reject) => {
       const handleConnect = () => {
+        timeoutSignal?.removeEventListener('abort', handleAbort)
         connection.off('connect', handleConnect)
         connection.off('error', handleError)
 
         resolve()
       }
       const handleError = (error: unknown) => {
+        timeoutSignal?.removeEventListener('abort', handleAbort)
         connection.off('connect', handleConnect)
         connection.off('error', handleError)
 
+        try {
+          connection.end()
+        } catch {}
+
         reject(RconError.TcpConnectionOpen({ cause: error }))
       }
+      const handleAbort = () => {
+        timeoutSignal?.removeEventListener('abort', handleAbort)
+        connection.off('connect', handleConnect)
+        connection.off('error', handleError)
 
+        try {
+          connection.end()
+        } catch {}
+
+        reject(RconError.Timeout())
+      }
+
+      timeoutSignal?.addEventListener('abort', handleAbort)
       connection.on('connect', handleConnect)
       connection.on('error', handleError)
     })
@@ -217,10 +250,6 @@ export const createRconClient = <TCommands extends Commands>(
     connection.on('data', handleData)
     connection.on('error', handleError)
     connection.on('close', handleClose)
-
-    if (!password) {
-      throw RconError.InvalidPassword()
-    }
 
     const auth = await $exec(connection, RconPacketType.Auth, password)
 
@@ -270,6 +299,19 @@ export const createRconClient = <TCommands extends Commands>(
     type: RconPacketType,
     body: string,
   ): Promise<RconPacket> => {
+    const timeoutSignal = timeout === 0 ? undefined : AbortSignal$timeout(timeout)
+    const timeoutPromise = !timeoutSignal
+      ? undefined
+      : new Promise<never>((_resolve, reject) => {
+          const handleAbort = () => {
+            timeoutSignal.removeEventListener('abort', handleAbort)
+
+            reject(RconError.Timeout())
+          }
+
+          timeoutSignal.addEventListener('abort', handleAbort)
+        })
+
     const packet = {
       id: requestId++,
       type,
@@ -288,7 +330,7 @@ export const createRconClient = <TCommands extends Commands>(
 
     const payload = serializeRconPacket(packet)
 
-    await new Promise<void>((resolve, reject) => {
+    const writePromise = new Promise<void>((resolve, reject) => {
       connection.write(payload, 'binary', (error) => {
         if (error) {
           reject(RconError.TcpWrite({ cause: error }))
@@ -298,8 +340,14 @@ export const createRconClient = <TCommands extends Commands>(
       })
     })
 
+    await Promise.race(timeoutPromise ? [writePromise, timeoutPromise] : [writePromise])
+
     try {
-      return await metadata.resolvers.promise
+      return await Promise.race(
+        timeoutPromise
+          ? [metadata.resolvers.promise, timeoutPromise]
+          : [metadata.resolvers.promise],
+      )
     } finally {
       if (!lastResponse || packet.id > lastResponse.id) {
         const metadata = requests[packet.id]
