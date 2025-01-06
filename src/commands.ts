@@ -77,7 +77,10 @@ export const createResultFromTypeDefinition = (
     if (!raw) {
       return []
     } else {
-      return raw.split(',').map((item) => createResultFromTypeDefinition(item, definition.items))
+      return raw
+        .split(',')
+        .map((item) => createResultFromTypeDefinition(item, definition.items))
+        .sort()
     }
   }
 
